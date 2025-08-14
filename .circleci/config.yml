@@ -8,8 +8,7 @@ jobs:
     resource_class: small
     steps:
       - checkout
-      - aws-cli/setup:
-          profile-name: default
+      - aws-cli/setup
       - run:
           name: Install jq
           command: sudo apt-get update && sudo apt-get install -y jq
@@ -25,33 +24,12 @@ jobs:
               exit 1
             fi
             
-            if [ ! -f "index.html" ]; then
-              echo "Error: index.html not found in repository root"
-              exit 1
-            fi
-            
-            echo "Uploading files to S3..."
-            aws s3 sync . s3://$AWS_S3_BUCKET_NAME \
-              --delete \
-              --cache-control "max-age=31536000" \
-              --exclude "*.DS_Store" \
-              --exclude "*.git*" \
-              --exclude "*.md" \
-              --exclude ".circleci/*" \
-              --exclude "terraform/*" \
-              --exclude "*.tf" \
-              --exclude "*.tfstate*" \
-              --exclude "*.tfvars"
-            
-            # Set specific cache control for HTML files
-            aws s3 cp . s3://$AWS_S3_BUCKET_NAME \
-              --recursive \
-              --exclude "*" \
-              --include "*.html" \
+            echo "Uploading index.html to S3..."
+            aws s3 cp index.html s3://$AWS_S3_BUCKET_NAME/index.html \
               --cache-control "max-age=300" \
               --content-type "text/html"
             
-            echo "Files uploaded successfully!"
+            echo "File uploaded successfully!"
             
             echo "Invalidating CloudFront cache..."
             INVALIDATION_ID=$(aws cloudfront create-invalidation \
