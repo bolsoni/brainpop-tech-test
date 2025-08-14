@@ -1,0 +1,73 @@
+version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@4.0
+
+jobs:
+  # Deploy website content only
+  deploy-website:
+    docker:
+      - image: cimg/base:stable
+    resource_class: small
+    steps:
+      - checkout
+      - aws-cli/setup:
+          profile-name: default
+      - run:
+          name: Install jq
+          command: sudo apt-get update && sudo apt-get install -y jq
+      - run:
+          name: Deploy Website Content
+          command: |
+            echo "Deploying to bucket: $AWS_S3_BUCKET_NAME"
+            echo "CloudFront distribution: $AWS_CLOUDFRONT_DISTRIBUTION_ID"
+            
+            if [ -z "$AWS_S3_BUCKET_NAME" ] || [ -z "$AWS_CLOUDFRONT_DISTRIBUTION_ID" ]; then
+              echo "Error: Required environment variables not set"
+              echo "AWS_S3_BUCKET_NAME and AWS_CLOUDFRONT_DISTRIBUTION_ID are missing"
+              exit 1
+            fi
+            
+            if [ ! -d "website" ]; then
+              echo "Error: website directory not found"
+              exit 1
+            fi
+            
+            echo "Uploading files to S3..."
+            aws s3 sync website/ s3://$AWS_S3_BUCKET_NAME \
+              --delete \
+              --cache-control "max-age=31536000" \
+              --exclude "*.DS_Store" \
+              --exclude "*.git*" \
+              --exclude "*.md"
+            
+            # cache control for HTML files
+            aws s3 cp website/ s3://$AWS_S3_BUCKET_NAME \
+              --recursive \
+              --exclude "*" \
+              --include "*.html" \
+              --cache-control "max-age=300" \
+              --content-type "text/html"
+            
+            echo "Files uploaded successfully!"
+            
+            echo "Invalidating CloudFront cache..."
+            INVALIDATION_ID=$(aws cloudfront create-invalidation \
+              --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION_ID" \
+              --paths "/*" \
+              --query 'Invalidation.Id' \
+              --output text)
+            
+            echo "CloudFront invalidation created: $INVALIDATION_ID"
+            echo "Website deployment completed successfully :)"
+
+# Workflow
+workflows:
+  production-deployment:
+    jobs:
+      - deploy-website:
+          context:
+            - aws-static-website
+          filters:
+            branches:
+              only: production
